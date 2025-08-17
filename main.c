@@ -332,7 +332,8 @@ int main()
         int sw = GetScreenWidth();
         int sh = GetScreenHeight();
         int xy = grabBarSize;
-        bool animating = false;
+        
+        EnableEventWaiting();
         for (int i = 0; i < records.length; i++)
         {
             TodoRecord* rec = &records.data[i];
@@ -364,26 +365,16 @@ int main()
                 }
             }
 
-            rec->expand = lerp(rec->expand, 1.f, 10.f, GetFrameTime());
-            float width = Lerp(0.f, rect.width - 4, rec->expand);
-            Rectangle lineRect = {rect.x + 4, rect.y + 1, width, rect.height - 2};
+            rec->expand = lerp(rec->expand, rect.width - 4.f, 10.f, GetFrameTime());
+            Rectangle lineRect = {rect.x + 4, rect.y + 1, rec->expand, rect.height - 2};
             DrawRectangleRounded(lineRect, 0.15f, 0.f, lineColor);
             DrawText(rec->name.begin, lineRect.x + 4, lineRect.y, grabBarSize - 2, BLACK);
 
-            if (rec->expand <= 0.999f)
+            if (fabsf(rec->expand - (rect.width - 4.f)) >= 1.f)
             {
-                animating = true;
+                DisableEventWaiting();
             }
             xy += grabBarSize;
-        }
-        
-        if (animating)
-        {
-            DisableEventWaiting();
-        }
-        else
-        {
-            EnableEventWaiting();
         }
 
         EndDrawing();
