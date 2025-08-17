@@ -12,7 +12,14 @@ static const unsigned char icon[] =
 
 #define GRAB_BAR_PERCENTAGE 0.1f
 
-#define NORD ((Color){46, 52, 64, 255});
+#define COLOR_BACKGROUND (Color){46, 52, 64, 255}
+#define COLOR_HIGHLIGHT (Color){127, 177, 193, 255}
+
+// useful smooth range: 1 to 25 (slow to fast)
+inline float lerp(float a, float b, float smooth, float dt)
+{
+    return b + (a - b) * expf(-smooth * dt);
+}
 
 #pragma region Strings
 
@@ -94,6 +101,8 @@ typedef struct
     bool done;
 
     bool active;
+
+    float expand;
 } TodoRecord;
 
 typedef struct
@@ -116,6 +125,7 @@ static void arr_remove(int index)
 static void arr_add(TodoRecord record)
 {
     record.active = true;
+    record.expand = 0.f;
     for (int i = 0; i < records.length; i++)
     {
         if (records.data[i].active == false)
@@ -147,6 +157,7 @@ static void arr_create()
 
 #pragma endregion
 
+#pragma region Serialization
 static void save_data()
 {
     int totalSize = sizeof(int);
@@ -220,6 +231,7 @@ static void load_data()
     assert(arrlen == records.length);
     
 }
+#pragma endregion
 
 ConfigFlags flags = FLAG_WINDOW_UNDECORATED | FLAG_VSYNC_HINT;
 
@@ -227,12 +239,11 @@ int main()
 {
     arr_create();
     load_data();
-
+    
     SetConfigFlags(flags);
     InitWindow(600, 200, "todo");
     Image image = LoadImageFromMemory(".png", icon, sizeof(icon));
     SetWindowIcon(image);
-
 
 
     Vector2 mousePosition = GetMousePosition();
@@ -250,21 +261,19 @@ int main()
     while (!WindowShouldClose())
     {
         BeginDrawing();
-        ClearBackground(GRAY);
+        ClearBackground(COLOR_BACKGROUND);
 
         mousePosition = GetMousePosition();
 
         int grabBarSize = GetScreenHeight() * GRAB_BAR_PERCENTAGE;
         Rectangle grabRect = (Rectangle){ 0, 0, GetScreenWidth(), GetScreenHeight() };
-        if (CheckCollisionPointRec(mousePosition, grabRect))
-        {
 
-            if (IsMouseButtonPressed(MOUSE_RIGHT_BUTTON) && !dragWindow)
-            {
-                windowPosition = GetWindowPosition();
-                dragWindow = true;
-                panOffset = mousePosition;
-            }
+        if (IsMouseButtonPressed(MOUSE_RIGHT_BUTTON) && !dragWindow)
+        {
+            SetMouseCursor(MOUSE_CURSOR_CROSSHAIR);
+            windowPosition = GetWindowPosition();
+            dragWindow = true;
+            panOffset = mousePosition;
         }
 
         if (dragWindow)
@@ -274,7 +283,11 @@ int main()
 
             SetWindowPosition((int)windowPosition.x, (int)windowPosition.y);
             
-            if (IsMouseButtonReleased(MOUSE_RIGHT_BUTTON)) dragWindow = false;
+            if (IsMouseButtonReleased(MOUSE_RIGHT_BUTTON))
+            {
+                SetMouseCursor(MOUSE_CURSOR_DEFAULT);
+                dragWindow = false;
+            }
         }
         
         
@@ -319,31 +332,59 @@ int main()
         int sw = GetScreenWidth();
         int sh = GetScreenHeight();
         int xy = grabBarSize;
+        bool animating = false;
         for (int i = 0; i < records.length; i++)
         {
             TodoRecord* rec = &records.data[i];
             if (!rec->active)
                 continue;
             Rectangle rect = (Rectangle){0, xy, grabBarSize, grabBarSize};
-            DrawRectangleRec(rect, rec->done ? GREEN : RED);
-            if (CheckCollisionPointRec(mousePosition, rect) && IsMouseButtonReleased(MOUSE_BUTTON_LEFT))
+            Color btnColor = rec->done ? GREEN : RED;
+            if (CheckCollisionPointRec(mousePosition, rect))
             {
-                rec->done = !rec->done;
+                if (IsMouseButtonReleased(MOUSE_BUTTON_LEFT))
+                {
+                    rec->done = !rec->done;
+                }
+                btnColor = COLOR_HIGHLIGHT;
             }
+            Rectangle btnRect = {rect.x + 2, rect.y + 2, rect.width - 4, rect.height - 4};
+            DrawRectangleRounded(btnRect, 0.15f, 0.f, btnColor);
 
             rect.width = sw - grabBarSize;
             rect.x += grabBarSize;
 
-            if (CheckCollisionPointRec(mousePosition, rect) && IsMouseButtonReleased(MOUSE_BUTTON_LEFT) && IsKeyDown(KEY_LEFT_CONTROL))
+            Color lineColor = { 195, 195, 195, 255 };
+            if (CheckCollisionPointRec(mousePosition, rect) && IsKeyDown(KEY_LEFT_CONTROL))
             {
-                arr_remove(i);
+                lineColor = (Color){ 255, 195, 195, 255 };
+                if (IsMouseButtonReleased(MOUSE_BUTTON_LEFT))
+                {
+                    arr_remove(i);
+                }
             }
 
-            DrawRectangleRec(rect, WHITE);
-            DrawText(rec->name.begin, rect.x + 2, rect.y, grabBarSize, BLACK);
+            rec->expand = lerp(rec->expand, 1.f, 10.f, GetFrameTime());
+            float width = Lerp(0.f, rect.width - 4, rec->expand);
+            Rectangle lineRect = {rect.x + 4, rect.y + 1, width, rect.height - 2};
+            DrawRectangleRounded(lineRect, 0.15f, 0.f, lineColor);
+            DrawText(rec->name.begin, lineRect.x + 4, lineRect.y, grabBarSize - 2, BLACK);
+
+            if (rec->expand <= 0.999f)
+            {
+                animating = true;
+            }
             xy += grabBarSize;
         }
         
+        if (animating)
+        {
+            DisableEventWaiting();
+        }
+        else
+        {
+            EnableEventWaiting();
+        }
 
         EndDrawing();
     }
