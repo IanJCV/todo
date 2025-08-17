@@ -221,12 +221,14 @@ static void load_data()
     
 }
 
+ConfigFlags flags = FLAG_WINDOW_UNDECORATED | FLAG_VSYNC_HINT;
+
 int main()
 {
     arr_create();
     load_data();
 
-    SetConfigFlags(FLAG_BORDERLESS_WINDOWED_MODE | FLAG_WINDOW_TRANSPARENT | FLAG_WINDOW_UNDECORATED | FLAG_VSYNC_HINT);
+    SetConfigFlags(flags);
     InitWindow(600, 200, "todo");
     Image image = LoadImageFromMemory(".png", icon, sizeof(icon));
     SetWindowIcon(image);
@@ -242,7 +244,7 @@ int main()
     string inputText = str_create("");
 
     EnableEventWaiting();
-    SetExitKey(KEY_F10);
+    SetExitKey(KEY_ESCAPE);
     SetTargetFPS(GetMonitorRefreshRate(GetCurrentMonitor()));
 
     while (!WindowShouldClose())
@@ -308,7 +310,10 @@ int main()
 
         if (IsKeyPressed(KEY_T))
         {
-            SetWindowState(FLAG_WINDOW_TOPMOST);
+            if (IsWindowState(FLAG_WINDOW_TOPMOST))
+                ClearWindowState(FLAG_WINDOW_TOPMOST);
+            else
+                SetWindowState(FLAG_WINDOW_TOPMOST);
         }
 
         int sw = GetScreenWidth();
