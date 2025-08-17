@@ -4,6 +4,7 @@
 #include <assert.h>
 #include "include/raylib.h"
 #include "include/raymath.h"
+#include "font.h"
 
 static const unsigned char icon[] =
 {
@@ -21,13 +22,35 @@ inline float lerp(float a, float b, float smooth, float dt)
     return b + (a - b) * expf(-smooth * dt);
 }
 
-#pragma region Strings
+#pragma region Typedefs
 
 typedef struct
 {
     char* begin;
     int length;
 } string;
+
+typedef struct
+{
+    string name;
+    bool done;
+
+    bool active;
+
+    float anim;
+} TodoRecord;
+
+typedef struct
+{
+    TodoRecord* data;
+    int length;
+    int capacity;
+} RecordArray;
+
+#pragma endregion
+
+#pragma region String Functions
+
 
 #define STR_ALLOCSIZE 128
 
@@ -94,24 +117,7 @@ static string str_deserialize(unsigned char* stream, int* bytes_read)
 
 #pragma endregion
 
-#pragma region Records
-typedef struct
-{
-    string name;
-    bool done;
-
-    bool active;
-
-    float expand;
-} TodoRecord;
-
-typedef struct
-{
-    TodoRecord* data;
-    int length;
-    int capacity;
-} RecordArray;
-
+#pragma region Record Functions
 
 RecordArray records = (RecordArray){.data = NULL, .length = 0, .capacity = 8};
 
@@ -125,7 +131,7 @@ static void arr_remove(int index)
 static void arr_add(TodoRecord record)
 {
     record.active = true;
-    record.expand = 0.f;
+    record.anim = 0.f;
     for (int i = 0; i < records.length; i++)
     {
         if (records.data[i].active == false)
@@ -194,6 +200,7 @@ static void save_data()
     assert(totalSize == totalWritten);
 
     SaveFileData("./todo.bin", bytes, totalWritten);
+    MemFree(bytes);
 }
 
 static void load_data()
@@ -230,10 +237,13 @@ static void load_data()
 
     assert(arrlen == records.length);
     
+    MemFree(data);
 }
 #pragma endregion
 
 ConfigFlags flags = FLAG_WINDOW_UNDECORATED | FLAG_VSYNC_HINT;
+
+Font font;
 
 int main()
 {
@@ -245,6 +255,7 @@ int main()
     Image image = LoadImageFromMemory(".png", icon, sizeof(icon));
     SetWindowIcon(image);
 
+    font = LoadFont_IBM();
 
     Vector2 mousePosition = GetMousePosition();
     Vector2 windowPosition = GetWindowPosition();
@@ -263,11 +274,15 @@ int main()
         BeginDrawing();
         ClearBackground(COLOR_BACKGROUND);
 
+        if (!inputOpen && IsKeyPressed(KEY_T))
+        {
+            if (IsWindowState(FLAG_WINDOW_TOPMOST))
+                ClearWindowState(FLAG_WINDOW_TOPMOST);
+            else
+                SetWindowState(FLAG_WINDOW_TOPMOST);
+        }
+
         mousePosition = GetMousePosition();
-
-        int grabBarSize = GetScreenHeight() * GRAB_BAR_PERCENTAGE;
-        Rectangle grabRect = (Rectangle){ 0, 0, GetScreenWidth(), GetScreenHeight() };
-
         if (IsMouseButtonPressed(MOUSE_RIGHT_BUTTON) && !dragWindow)
         {
             SetMouseCursor(MOUSE_CURSOR_CROSSHAIR);
@@ -295,7 +310,7 @@ int main()
         {
             inputOpen = !inputOpen;
 
-            if (!inputOpen)
+            if (!inputOpen && inputText.length > 0)
             {
                 arr_add((TodoRecord){.name = str_duplicate(&inputText), .done = false, .active = true});
             }
@@ -304,6 +319,13 @@ int main()
                 str_zero(&inputText);
             }
         }
+
+
+        int lineHeight = GetScreenHeight() * GRAB_BAR_PERCENTAGE;
+        int sw = GetScreenWidth();
+        int sh = GetScreenHeight();
+        int ypad = 2;
+        int y0 = 0;
 
         if (inputOpen)
         {
@@ -317,31 +339,23 @@ int main()
                 str_backspace(&inputText);
             }
 
-            DrawRectangle(0, 0, GetScreenWidth(), grabBarSize, LIGHTGRAY);
-            DrawText(inputText.begin, 0, 0, grabBarSize, RED);
+            DrawRectangle(4, y0, GetScreenWidth() - 4, lineHeight, LIGHTGRAY);
+            DrawTextEx(font, inputText.begin, (Vector2){4, y0}, lineHeight, 0.f, BLACK);
+
+            Vector2 textSize = MeasureTextEx(font, inputText.begin, lineHeight, 0.f);
+            DrawRectangle(textSize.x + 2, 0, 10, textSize.y, BLACK);
+            y0 += lineHeight + ypad;
         }
 
-        if (IsKeyPressed(KEY_T))
-        {
-            if (IsWindowState(FLAG_WINDOW_TOPMOST))
-                ClearWindowState(FLAG_WINDOW_TOPMOST);
-            else
-                SetWindowState(FLAG_WINDOW_TOPMOST);
-        }
-
-        int sw = GetScreenWidth();
-        int sh = GetScreenHeight();
-        int xy = grabBarSize;
-        
         EnableEventWaiting();
         for (int i = 0; i < records.length; i++)
         {
             TodoRecord* rec = &records.data[i];
             if (!rec->active)
                 continue;
-            Rectangle rect = (Rectangle){0, xy, grabBarSize, grabBarSize};
+            Rectangle fullRect = (Rectangle){0, y0, lineHeight, lineHeight};
             Color btnColor = rec->done ? GREEN : RED;
-            if (CheckCollisionPointRec(mousePosition, rect))
+            if (CheckCollisionPointRec(mousePosition, fullRect))
             {
                 if (IsMouseButtonReleased(MOUSE_BUTTON_LEFT))
                 {
@@ -349,14 +363,14 @@ int main()
                 }
                 btnColor = COLOR_HIGHLIGHT;
             }
-            Rectangle btnRect = {rect.x + 2, rect.y + 2, rect.width - 4, rect.height - 4};
+            Rectangle btnRect = {fullRect.x + 2, fullRect.y + 2, fullRect.width - 4, fullRect.height - 4};
             DrawRectangleRounded(btnRect, 0.15f, 0.f, btnColor);
 
-            rect.width = sw - grabBarSize;
-            rect.x += grabBarSize;
+            fullRect.width = sw - lineHeight;
+            fullRect.x += lineHeight;
 
             Color lineColor = { 195, 195, 195, 255 };
-            if (CheckCollisionPointRec(mousePosition, rect) && IsKeyDown(KEY_LEFT_CONTROL))
+            if (CheckCollisionPointRec(mousePosition, fullRect) && IsKeyDown(KEY_LEFT_CONTROL))
             {
                 lineColor = (Color){ 255, 195, 195, 255 };
                 if (IsMouseButtonReleased(MOUSE_BUTTON_LEFT))
@@ -365,16 +379,17 @@ int main()
                 }
             }
 
-            rec->expand = lerp(rec->expand, rect.width - 4.f, 10.f, GetFrameTime());
-            Rectangle lineRect = {rect.x + 4, rect.y + 1, rec->expand, rect.height - 2};
-            DrawRectangleRounded(lineRect, 0.15f, 0.f, lineColor);
-            DrawText(rec->name.begin, lineRect.x + 4, lineRect.y, grabBarSize - 2, BLACK);
+            Rectangle lineRect = {fullRect.x + 4, fullRect.y + 1, fullRect.width - 4.f, fullRect.height - 2};
 
-            if (fabsf(rec->expand - (rect.width - 4.f)) >= 1.f)
+            rec->anim = lerp(rec->anim, 1.f, 5.f, GetFrameTime());
+            DrawRectangleRounded(lineRect, 0.15f, 0.f, ColorLerp(GREEN, lineColor, rec->anim));
+            DrawTextEx(font, rec->name.begin, (Vector2){lineRect.x + 4, lineRect.y}, lineHeight - 2, 0.f, BLACK);
+
+            if (fabsf(rec->anim - (fullRect.width - 4.f)) >= 1.f)
             {
                 DisableEventWaiting();
             }
-            xy += grabBarSize;
+            y0 += lineHeight + ypad;
         }
 
         EndDrawing();
