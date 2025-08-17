@@ -7,3 +7,6 @@ controls:
     - ctrl+click on the text to remove the entry.  
     - escape to save and exit  
     - T to toggle always-on-top  
+
+## building
+if for whatever reason you would like to build this, just have clang installed and run `build.bat noconsole` for the "release" build
